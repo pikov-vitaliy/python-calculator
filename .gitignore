@@ -1,6 +1,1 @@
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-.env
-.PVS-Studio/
+Nothing needs to be added to .gitignore since only a Python source file (`test_app.py`) was added and there are no build artifacts, dependencies, or temporary files in the changes.
