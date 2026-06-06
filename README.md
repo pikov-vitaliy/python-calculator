@@ -41,6 +41,10 @@ cd "C:\Users\user\Documents\GitHub\python-calculator"
 npm run dev
 ```
 
+Важно: `npm run db:setup` лучше выполнять до `npm run dev`. На Windows Prisma
+не всегда может заменить `query_engine-windows.dll.node`, если dev-сервер уже
+запущен и держит этот файл открытым.
+
 ## База данных
 
 Проект использует SQLite через Prisma. Переменная окружения хранится в `.env`:
@@ -78,6 +82,32 @@ prisma/db/calculator.db
 npm run db:setup
 npm run build
 npm run start
+```
+
+## Типовые ошибки на Windows
+
+### `Error: listen EADDRINUSE: address already in use :::3000`
+
+Порт `3000` уже занят старым dev-сервером. Освободить порт:
+
+```powershell
+$portProcessId = (Get-NetTCPConnection -LocalPort 3000 -State Listen).OwningProcess
+Stop-Process -Id $portProcessId -Force
+```
+
+После этого снова:
+
+```powershell
+npm run dev
+```
+
+### `EPERM: operation not permitted, rename ... query_engine-windows.dll.node`
+
+Обычно это значит, что Next.js/Node держит Prisma engine DLL открытым. Остановите
+dev-сервер на `3000`, затем повторите:
+
+```powershell
+npm run db:setup
 ```
 
 ## Тесты

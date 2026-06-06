@@ -20,7 +20,7 @@
     "check": "npm run typecheck && npm run test && npm run lint && npm run build",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
-    "db:setup": "prisma db push && prisma generate"
+    "db:setup": "prisma db push --skip-generate && prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^6.11.1",
