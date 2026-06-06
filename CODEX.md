@@ -7,7 +7,7 @@
 - Путь: `C:\Users\user\Documents\GitHub\python-calculator`
 - Репозиторий: `https://github.com/pikov-vitaliy/python-calculator`
 - Ветка: `codex/project-cleanup-tests-ci`
-- Базовый коммит проверки: `2ea58e8 chore: add Windows recovery notes and fix db setup`
+- Базовый коммит проверки перед финализацией: `2ea58e8 chore: add Windows recovery notes and fix db setup`
 - Назначение: простой веб-калькулятор, без дальнейшего "окультуривания" без явной необходимости.
 
 ## Текущее состояние
@@ -48,6 +48,7 @@ npm run check
 - `prisma/schema.prisma` - схема SQLite.
 - `.github/workflows/ci.yml` - CI quality gate.
 - `README.md` - актуальные команды запуска и Windows recovery notes.
+- `.env.example` - безопасный пример локальной SQLite-конфигурации.
 
 ## Команды
 
@@ -71,6 +72,12 @@ npm run check
 - перед пушем выполнять `npm run check`;
 - при изменениях в Prisma сначала выполнять `npm run db:setup`;
 - держать проект как простой калькулятор.
+
+## Финальные замечания по сопровождению
+
+- CI должен оставаться read-only: `permissions: contents: read`, `actions/checkout` с `persist-credentials: false`.
+- Быстрый старт должен работать из fresh clone, без привязки к локальному пути пользователя.
+- Qwen/GitKraken/другие AI-assistant артефакты считаются локальной оснасткой и не входят в продуктовый репозиторий без отдельного решения.
 
 ## Примечание
 

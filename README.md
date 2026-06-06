@@ -21,7 +21,8 @@ npm --version
 Из любого PowerShell-терминала:
 
 ```powershell
-cd "C:\Users\user\Documents\GitHub\python-calculator"
+git clone https://github.com/pikov-vitaliy/python-calculator.git
+cd python-calculator
 npm install
 if (!(Test-Path .env)) { Copy-Item .env.example .env }
 npm run db:setup
@@ -37,7 +38,6 @@ http://localhost:3000
 Если зависимости уже установлены и база уже подготовлена, достаточно:
 
 ```powershell
-cd "C:\Users\user\Documents\GitHub\python-calculator"
 npm run dev
 ```
 
