@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   title: "Калькулятор — Web Calculator",
   description: "Красивый веб-калькулятор с историей вычислений. 6 операций: сложение, вычитание, умножение, деление, степень, остаток.",
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/logo.svg",
   },
 };
 
@@ -28,7 +28,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="ru" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
