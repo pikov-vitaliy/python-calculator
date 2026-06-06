@@ -1,14 +1,27 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
+
+const historyLimitSchema = z.coerce.number().int().min(1).max(200)
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const limit = Math.min(Number(searchParams.get('limit')) || 50, 200)
+    const limitParam = searchParams.get('limit')
+    const parsedLimit = limitParam
+      ? historyLimitSchema.safeParse(limitParam)
+      : { success: true as const, data: 50 }
+
+    if (!parsedLimit.success) {
+      return NextResponse.json(
+        { error: 'Параметр limit должен быть целым числом от 1 до 200' },
+        { status: 400 }
+      )
+    }
 
     const calculations = await db.calculation.findMany({
       orderBy: { createdAt: 'desc' },
-      take: limit,
+      take: parsedLimit.data,
     })
 
     const operatorSymbols: Record<string, string> = {
