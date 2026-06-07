@@ -2,17 +2,9 @@ import CalculatorApp, {
   type HistoryItem,
 } from '@/components/calculator/calculator-app'
 import { db } from '@/lib/db'
+import { OPERATORS } from '@/lib/calculator'
 
 export const dynamic = 'force-dynamic'
-
-const operatorSymbols: Record<string, string> = {
-  '+': '+',
-  '-': '-',
-  '*': '×',
-  '/': '÷',
-  '**': '^',
-  '%': '%',
-}
 
 export default async function Page() {
   const calculations = await db.calculation.findMany({
@@ -20,16 +12,28 @@ export default async function Page() {
     take: 50,
   })
 
-  const initialHistory: HistoryItem[] = calculations.map((calculation) => ({
-    id: calculation.id,
-    operandA: calculation.operandA,
-    operandB: calculation.operandB,
-    operator: calculation.operator,
-    symbol: operatorSymbols[calculation.operator] || calculation.operator,
-    result: calculation.result,
-    error: calculation.error,
-    createdAt: calculation.createdAt.toISOString(),
-  }))
+  const initialHistory: HistoryItem[] = calculations.map((c) => {
+    let displayExpression = c.fullExpression
+
+    if (!displayExpression && c.operandA !== null && c.operator) {
+      const opKey = c.operator as keyof typeof OPERATORS
+      const symbol = OPERATORS[opKey]?.symbol || c.operator
+      
+      if (OPERATORS[opKey]?.isFunction) {
+         displayExpression = `${symbol}(${c.operandA})`
+      } else {
+         displayExpression = `${c.operandA} ${symbol} ${c.operandB ?? ''}`.trim()
+      }
+    }
+
+    return {
+      id: c.id,
+      expression: displayExpression || 'Неизвестное выражение',
+      result: c.result,
+      error: c.error,
+      createdAt: c.createdAt.toISOString(),
+    }
+  })
 
   return <CalculatorApp initialHistory={initialHistory} />
 }

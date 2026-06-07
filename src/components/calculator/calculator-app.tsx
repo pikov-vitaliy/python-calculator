@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -30,17 +30,13 @@ import { useTheme } from 'next-themes'
 import { toast } from 'sonner'
 import {
   OPERATORS as CALCULATOR_OPERATORS,
+  CONSTANTS,
   formatCalculatorResult,
-  parseOperandInput,
-  type CalculatorOperator,
 } from '@/lib/calculator'
 
 export interface HistoryItem {
   id: string
-  operandA: number
-  operandB: number
-  operator: string
-  symbol: string
+  expression: string
   result: number | null
   error: string | null
   createdAt: string
@@ -50,29 +46,49 @@ interface CalculatorAppProps {
   initialHistory: HistoryItem[]
 }
 
-const OPERATORS = [
+interface OperatorConfigEntry {
+  key: string
+  color: string
+  ringColor: string
+}
+
+const OPERATORS_CONFIG: OperatorConfigEntry[] = [
   { key: '+', color: 'bg-emerald-500 hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-700', ringColor: 'ring-emerald-500/30' },
   { key: '-', color: 'bg-rose-500 hover:bg-rose-600 dark:bg-rose-600 dark:hover:bg-rose-700', ringColor: 'ring-rose-500/30' },
   { key: '*', color: 'bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700', ringColor: 'ring-amber-500/30' },
   { key: '/', color: 'bg-violet-500 hover:bg-violet-600 dark:bg-violet-600 dark:hover:bg-violet-700', ringColor: 'ring-violet-500/30' },
   { key: '**', color: 'bg-orange-500 hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700', ringColor: 'ring-orange-500/30' },
   { key: '%', color: 'bg-teal-500 hover:bg-teal-600 dark:bg-teal-600 dark:hover:bg-teal-700', ringColor: 'ring-teal-500/30' },
+  { key: 'sqrt', color: 'bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-700', ringColor: 'ring-indigo-500/30' },
+  { key: 'abs', color: 'bg-pink-500 hover:bg-pink-600 dark:bg-pink-600 dark:hover:bg-pink-700', ringColor: 'ring-pink-500/30' },
 ] as const
 
 export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
   const { theme, setTheme } = useTheme()
-  const [operandA, setOperandA] = useState('')
-  const [operandB, setOperandB] = useState('')
-  const [selectedOperator, setSelectedOperator] = useState<CalculatorOperator | null>(null)
+  const [expression, setExpression] = useState('')
   const [result, setResult] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isCalculating, setIsCalculating] = useState(false)
   const [lastResult, setLastResult] = useState<string | null>(null)
   const [history, setHistory] = useState<HistoryItem[]>(initialHistory)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   const addToHistory = useCallback((item: HistoryItem) => {
     setHistory((prev) => [item, ...prev])
   }, [])
+
+  const deleteHistoryItem = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    try {
+      const res = await fetch(`/api/history?id=${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        setHistory((prev) => prev.filter((item) => item.id !== id))
+        toast.success('Запись удалена')
+      }
+    } catch {
+      toast.error('Не удалось удалить запись')
+    }
+  }
 
   const clearHistory = async () => {
     try {
@@ -87,21 +103,22 @@ export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
   const applyFromHistory = (item: HistoryItem) => {
     if (item.result !== null) {
       const formatted = formatCalculatorResult(item.result)
-      setOperandA(formatted)
-      setSelectedOperator(null)
-      setOperandB('')
+      setExpression(formatted)
       setResult(null)
       setError(null)
-      toast.success('Результат скопирован в поле A')
+      toast.success('Результат скопирован')
     }
   }
 
-  const handleCalculate = useCallback(async () => {
-    const a = parseOperandInput(operandA)
-    const b = parseOperandInput(operandB)
+  const handleClear = useCallback(() => {
+    setExpression('')
+    setResult(null)
+    setError(null)
+  }, [])
 
-    if (a === null || b === null || !selectedOperator) {
-      setError('Введите оба числа и выберите операцию')
+  const handleCalculate = useCallback(async () => {
+    if (!expression.trim()) {
+      setError('Введите выражение')
       setTimeout(() => setError(null), 3000)
       return
     }
@@ -114,7 +131,7 @@ export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
       const res = await fetch('/api/calculate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ a, b, operator: selectedOperator }),
+        body: JSON.stringify({ expression }),
       })
       const data = await res.json()
 
@@ -124,10 +141,7 @@ export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
         setLastResult(formatted)
         addToHistory({
           id: data.id,
-          operandA: a,
-          operandB: b,
-          operator: selectedOperator,
-          symbol: CALCULATOR_OPERATORS[selectedOperator].symbol,
+          expression: data.expression,
           result: data.result,
           error: null,
           createdAt: new Date().toISOString(),
@@ -136,10 +150,7 @@ export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
         setError(data.error || 'Ошибка вычисления')
         addToHistory({
           id: data.id,
-          operandA: a,
-          operandB: b,
-          operator: selectedOperator,
-          symbol: CALCULATOR_OPERATORS[selectedOperator].label,
+          expression,
           result: null,
           error: data.error,
           createdAt: new Date().toISOString(),
@@ -150,24 +161,58 @@ export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
     } finally {
       setIsCalculating(false)
     }
-  }, [operandA, operandB, selectedOperator, addToHistory])
+  }, [expression, addToHistory])
 
-  const handleClear = () => {
-    setOperandA('')
-    setOperandB('')
-    setSelectedOperator(null)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        handleCalculate()
+        return
+      }
+
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        handleClear()
+        return
+      }
+
+      if (document.activeElement !== inputRef.current && /[\d\+\-\*\/\^\%\(\)\.]/.test(e.key)) {
+         inputRef.current?.focus()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [handleCalculate, handleClear])
+
+  const appendToExpression = (val: string) => {
+    setExpression(prev => prev + val)
     setResult(null)
-    setError(null)
+    inputRef.current?.focus()
   }
 
   const handleUseLastResult = () => {
     if (lastResult) {
-      setOperandA(lastResult)
+      setExpression(lastResult)
       setResult(null)
     }
   }
 
-  const selectedOp = OPERATORS.find(o => o.key === selectedOperator)
+  const handleConstant = (value: number) => {
+    appendToExpression(formatCalculatorResult(value))
+  }
+
+  const handleOperator = (key: string) => {
+    const op = CALCULATOR_OPERATORS[key]
+    if (!op) return
+
+    if (op.isFunction) {
+      appendToExpression(`${op.symbol}(`)
+    } else {
+      appendToExpression(` ${op.symbol} `)
+    }
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-background via-background to-muted/30">
@@ -180,13 +225,13 @@ export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
             </div>
             <div>
               <h1 className="text-lg font-bold tracking-tight">Калькулятор</h1>
-              <p className="text-xs text-muted-foreground">6 операций · История вычислений</p>
+              <p className="text-xs text-muted-foreground">Complex Expressions Mode</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className="text-xs gap-1">
-              <Zap className="h-3 w-3" />
-              Next.js 16
+              <Zap className="h-3 w-3 text-amber-500 fill-amber-500" />
+              Pro Edition
             </Badge>
             <TooltipProvider>
               <Tooltip>
@@ -223,25 +268,12 @@ export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
               {/* Display */}
               <div className="mb-5 p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-muted/60 to-muted/30 border border-border/30">
                 <div className="flex items-center justify-between mb-1">
-                  <AnimatePresence mode="wait">
-                    <motion.p
-                      key={`expr-${operandA}-${selectedOperator}-${operandB}`}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 10 }}
-                      transition={{ duration: 0.15 }}
-                      className="text-sm text-muted-foreground font-mono truncate"
-                    >
-                      {operandA && selectedOperator && operandB
-                        ? `${operandA} ${CALCULATOR_OPERATORS[selectedOperator].label} ${operandB}`
-                        : 'Введите выражение...'}
-                    </motion.p>
-                  </AnimatePresence>
-                  {selectedOp && (
-                    <Badge variant="outline" className={`text-xs px-2 py-0 ${selectedOp.color.replace(/bg-|dark:/g, 'text-').split(' ').slice(-1)[0]} border-0`}>
-                      {CALCULATOR_OPERATORS[selectedOp.key].description}
-                    </Badge>
-                  )}
+                  <p className="text-sm text-muted-foreground font-mono truncate">
+                    Результат:
+                  </p>
+                  <Badge variant="outline" className="text-[10px] uppercase tracking-wider opacity-50 border-0">
+                    Custom Parser
+                  </Badge>
                 </div>
 
                 <div className="min-h-[3rem] flex items-center">
@@ -251,12 +283,11 @@ export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
                         key="result"
                         initial={{ opacity: 0, scale: 0.9, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        transition={{ type: 'spring', stiffness: 300, damping: 25 }}
                         className="text-4xl sm:text-5xl font-bold font-mono text-foreground"
                       >
-                        = {result}
+                        {result}
                       </motion.span>
-                    ) : lastResult && !operandA ? (
+                    ) : lastResult && !expression ? (
                       <motion.button
                         key="last-result"
                         initial={{ opacity: 0 }}
@@ -295,81 +326,79 @@ export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
                 </AnimatePresence>
               </div>
 
-              {/* Inputs */}
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-5">
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                    Первое число (A)
-                  </label>
-                  <input
+              {/* Expression Input */}
+              <div className="mb-5">
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                  Выражение
+                </label>
+                <div className="relative">
+                   <input
+                    ref={inputRef}
                     type="text"
-                    inputMode="decimal"
-                    value={operandA}
+                    value={expression}
                     onChange={(e) => {
-                      setOperandA(e.target.value)
+                      setExpression(e.target.value)
                       setResult(null)
                     }}
-                    placeholder="0"
-                    className="w-full px-3 sm:px-4 py-3 text-lg sm:text-xl font-mono rounded-xl border border-border/50 bg-background/80 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all placeholder:text-muted-foreground/20"
-                    onKeyDown={(e) => e.key === 'Enter' && handleCalculate()}
-                    aria-label="Первое число"
+                    placeholder="Например: (2 + 2) * 5"
+                    className="w-full px-4 py-4 text-xl sm:text-2xl font-mono rounded-xl border border-border/50 bg-background/80 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all placeholder:text-muted-foreground/20"
                   />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                    Второе число (B)
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={operandB}
-                    onChange={(e) => {
-                      setOperandB(e.target.value)
-                      setResult(null)
-                    }}
-                    placeholder="0"
-                    className="w-full px-3 sm:px-4 py-3 text-lg sm:text-xl font-mono rounded-xl border border-border/50 bg-background/80 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all placeholder:text-muted-foreground/20"
-                    onKeyDown={(e) => e.key === 'Enter' && handleCalculate()}
-                    aria-label="Второе число"
-                  />
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-1">
+                     <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground" onClick={() => appendToExpression('(')} >(</Button>
+                     <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground" onClick={() => appendToExpression(')')} >)</Button>
+                  </div>
                 </div>
               </div>
 
-              {/* Operators */}
-              <div className="mb-5">
-                <label className="text-xs font-medium text-muted-foreground mb-2 block">
-                  Операция
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {OPERATORS.map((op) => {
-                    const isSelected = selectedOperator === op.key
+              {/* Controls Grid */}
+              <div className="grid grid-cols-4 gap-2 mb-6">
+                {/* Numbers & Common */}
+                <div className="col-span-3 grid grid-cols-3 gap-2">
+                  {[7, 8, 9, 4, 5, 6, 1, 2, 3, 0, '.', 'π'].map((n) => (
+                    <Button
+                      key={n}
+                      variant="outline"
+                      className="h-12 text-lg font-medium rounded-xl hover:bg-muted/80"
+                      onClick={() => n === 'π' ? handleConstant(CONSTANTS.PI) : appendToExpression(n.toString())}
+                    >
+                      {n}
+                    </Button>
+                  ))}
+                </div>
+                {/* Operators */}
+                <div className="grid grid-cols-1 gap-2">
+                  {OPERATORS_CONFIG.slice(0, 4).map((op) => {
+                    const opDef = CALCULATOR_OPERATORS[op.key]
                     return (
-                      <TooltipProvider key={op.key} delayDuration={300}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <motion.div whileTap={{ scale: 0.93 }}>
-                              <Button
-                                variant={isSelected ? 'default' : 'outline'}
-                                onClick={() => {
-                                  setSelectedOperator(op.key)
-                                  setResult(null)
-                                }}
-                                className={`h-12 sm:h-14 text-base sm:text-lg font-bold rounded-xl transition-all duration-200 ${
-                                  isSelected
-                                    ? `${op.color} text-white shadow-lg border-0 ring-2 ${op.ringColor} ring-offset-2 ring-offset-background`
-                                    : 'hover:bg-muted/80 hover:border-border/80'
-                                }`}
-                              >
-                                {CALCULATOR_OPERATORS[op.key].label}
-                              </Button>
-                            </motion.div>
-                          </TooltipTrigger>
-                          <TooltipContent>{CALCULATOR_OPERATORS[op.key].description}</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <Button
+                        key={op.key}
+                        variant="secondary"
+                        className={`h-12 text-xl font-bold rounded-xl ${op.color} text-white border-0 shadow-sm`}
+                        onClick={() => handleOperator(op.key)}
+                      >
+                        {opDef?.label}
+                      </Button>
                     )
                   })}
                 </div>
+              </div>
+
+              {/* Scientific row */}
+              <div className="flex gap-2 mb-6">
+                 {OPERATORS_CONFIG.slice(4).map((op) => {
+                    const opDef = CALCULATOR_OPERATORS[op.key]
+                    return (
+                      <Button
+                        key={op.key}
+                        variant="outline"
+                        className="flex-1 h-10 text-sm font-semibold rounded-lg border-dashed"
+                        onClick={() => handleOperator(op.key)}
+                      >
+                        {opDef?.label}
+                      </Button>
+                    )
+                  })}
+                  <Button variant="outline" className="flex-1 h-10 text-xs rounded-lg border-dashed" onClick={() => handleConstant(CONSTANTS.E)}>e</Button>
               </div>
 
               {/* Actions */}
@@ -378,17 +407,17 @@ export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
                   <Button
                     onClick={handleCalculate}
                     disabled={isCalculating}
-                    className="w-full h-12 text-base font-semibold rounded-xl bg-primary hover:bg-primary/90 shadow-md shadow-primary/20"
+                    className="w-full h-14 text-lg font-bold rounded-xl bg-primary hover:bg-primary/90 shadow-md shadow-primary/20"
                   >
                     {isCalculating ? (
                       <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Вычисляю...
+                        <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                        Считаю...
                       </>
                     ) : (
                       <>
                         Вычислить
-                        <ChevronRight className="h-4 w-4 ml-1" />
+                        <ChevronRight className="h-5 w-5 ml-1" />
                       </>
                     )}
                   </Button>
@@ -400,13 +429,13 @@ export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
                         <Button
                           variant="outline"
                           onClick={handleClear}
-                          className="h-12 px-4 rounded-xl"
+                          className="h-14 px-5 rounded-xl border-2"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-5 w-5 text-muted-foreground" />
                         </Button>
                       </motion.div>
                     </TooltipTrigger>
-                    <TooltipContent>Очистить поля</TooltipContent>
+                    <TooltipContent>Очистить всё</TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               </div>
@@ -430,21 +459,14 @@ export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
                   </Badge>
                 </div>
                 {history.length > 0 && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={clearHistory}
-                          className="h-7 w-7 rounded-md"
-                        >
-                          <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Очистить историю</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={clearHistory}
+                    className="h-7 w-7 rounded-md"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  </Button>
                 )}
               </div>
               <Separator className="mx-4 w-auto" />
@@ -454,20 +476,19 @@ export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
                   <div className="p-4 rounded-2xl bg-muted/20 mb-3">
                     <Clock className="h-8 w-8" />
                   </div>
-                  <p className="text-sm font-medium">Пока нет вычислений</p>
-                  <p className="text-xs mt-1">Результаты появятся здесь</p>
+                  <p className="text-sm font-medium">История пуста</p>
                 </div>
               ) : (
-                <ScrollArea className="flex-1 max-h-[500px]">
+                <ScrollArea className="flex-1 max-h-[600px]">
                   <div className="p-3 space-y-2">
                     <AnimatePresence initial={false}>
-                      {history.map((item, index) => (
+                      {history.map((item) => (
                         <motion.div
                           key={item.id}
                           initial={{ opacity: 0, y: -10, scale: 0.95 }}
                           animate={{ opacity: 1, y: 0, scale: 1 }}
                           exit={{ opacity: 0, x: -100, scale: 0.8 }}
-                          transition={{ duration: 0.2, delay: index === 0 ? 0 : 0 }}
+                          transition={{ duration: 0.2 }}
                           className={`group p-3 rounded-xl border transition-colors cursor-pointer ${
                             item.error
                               ? 'bg-destructive/5 border-destructive/20 hover:bg-destructive/10'
@@ -476,28 +497,30 @@ export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
                           onClick={() => item.result !== null && applyFromHistory(item)}
                         >
                           <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-mono text-muted-foreground">
-                              {new Date(item.createdAt).toLocaleTimeString('ru-RU', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                second: '2-digit',
-                              })}
+                            <span className="text-[10px] font-mono text-muted-foreground uppercase">
+                              {new Date(item.createdAt).toLocaleTimeString('ru-RU')}
                             </span>
-                            {item.result !== null && (
-                              <ArrowUpRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-colors" />
-                            )}
+                            <div className="flex items-center gap-1.5">
+                              {item.result !== null && (
+                                <ArrowUpRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-colors" />
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={(e) => deleteHistoryItem(e, item.id)}
+                                className="h-6 w-6 rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
                           </div>
-                          <p className="text-sm font-mono text-foreground/80">
-                            {item.operandA} {item.symbol} {item.operandB}
+                          <p className="text-xs font-mono text-muted-foreground/70 mb-0.5 truncate max-w-full" title={item.expression}>
+                            {item.expression}
                           </p>
-                          <p className={`text-base font-bold font-mono mt-0.5 ${
+                          <p className={`text-base font-bold font-mono ${
                             item.error ? 'text-destructive' : 'text-foreground'
                           }`}>
-                            {item.error
-                              ? item.error
-                              : item.result !== null
-                                ? `= ${formatCalculatorResult(item.result)}`
-                                : '= ?'}
+                            {item.error ? item.error : `= ${item.result}`}
                           </p>
                         </motion.div>
                       ))}
@@ -512,8 +535,8 @@ export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
 
       {/* Footer */}
       <footer className="mt-auto border-t py-4 bg-background/50">
-        <div className="max-w-5xl mx-auto px-4 text-center text-xs text-muted-foreground">
-          Создано на базе Python-калькулятора · Next.js 16 + TypeScript + Tailwind CSS 4 + Prisma
+        <div className="max-w-5xl mx-auto px-4 text-center text-[10px] text-muted-foreground uppercase tracking-widest font-medium">
+          Professional Calculator · Next.js 16 + Custom Parser
         </div>
       </footer>
     </div>

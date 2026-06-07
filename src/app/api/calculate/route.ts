@@ -9,20 +9,18 @@ export async function POST(request: NextRequest) {
 
     if (!parsedBody.success) {
       return NextResponse.json(
-        { error: 'Неверные параметры. Укажите числа и оператор (+, -, *, /, **, %)' },
+        { error: 'Неверные параметры. Ожидается строка выражения.' },
         { status: 400 }
       )
     }
 
-    const { a, b, operator } = parsedBody.data
+    const { expression } = parsedBody.data
     const calculation = calculate(parsedBody.data)
 
     if (!calculation.success) {
       const calc = await db.calculation.create({
         data: {
-          operandA: a,
-          operandB: b,
-          operator,
+          fullExpression: expression,
           error: calculation.error,
         },
       })
@@ -36,9 +34,7 @@ export async function POST(request: NextRequest) {
 
     const calc = await db.calculation.create({
       data: {
-        operandA: a,
-        operandB: b,
-        operator,
+        fullExpression: expression,
         result: calculation.result,
       },
     })

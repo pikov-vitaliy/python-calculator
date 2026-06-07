@@ -1,33 +1,30 @@
 # CODEX.md
 
-Краткое состояние проекта для возврата после схлопывания контекста.
+Resume notes for Codex after context compaction.
 
-## Проект
+## Project
 
-- Путь: `C:\Users\user\Documents\GitHub\python-calculator`
-- Репозиторий: `https://github.com/pikov-vitaliy/python-calculator`
-- Ветка: `codex/project-cleanup-tests-ci`
-- Базовый коммит проверки перед финализацией: `2ea58e8 chore: add Windows recovery notes and fix db setup`
-- Назначение: простой веб-калькулятор, без дальнейшего "окультуривания" без явной необходимости.
+- Path: `C:\Users\user\Documents\GitHub\python-calculator`
+- Repository: `https://github.com/pikov-vitaliy/python-calculator`
+- Current branch observed on 2026-06-07: `main`
+- Current head observed on 2026-06-07: `af40767 chore: finalize CI and setup docs`
+- Purpose: a small web calculator with calculation history. Keep the project simple unless the user explicitly asks for broader product work.
 
-## Текущее состояние
+## Role
 
-- Рабочее дерево было чистым до создания этого файла.
-- Проект собирается и проходит локальный quality gate.
-- Проверка выполнена 2026-06-06 командой:
+Act as a strict reviewer when the user asks for review, validation, stage reports, tester instructions, or readiness decisions.
 
-```powershell
-npm run check
-```
+Priority order:
 
-Результат:
+1. Correctness.
+2. Security and safe failure behavior.
+3. Standards-backed SSDLC practice.
+4. Minimal, task-scoped changes.
+5. Clear reviewer/tester evidence.
 
-- `tsc --noEmit` проходит.
-- `vitest run` проходит: 1 test file, 27 tests.
-- `eslint .` проходит.
-- `next build` проходит.
+For security and process guidance, align recommendations with NIST SSDF, OWASP, CWE, ISO/IEC 27001/27034, and least-privilege/defense-in-depth principles. Do not give a readiness verdict from descriptions alone; verify code, diff, commands, and behavior.
 
-## Стек
+## Current Stack
 
 - Next.js 16
 - React 19
@@ -38,47 +35,101 @@ npm run check
 - Vitest
 - ESLint
 
-## Основные файлы
+## Important Files
 
-- `src/components/calculator/calculator-app.tsx` - главный UI калькулятора.
-- `src/lib/calculator.ts` - бизнес-логика вычислений, валидация и форматирование.
-- `src/lib/calculator.test.ts` - unit-тесты бизнес-логики.
-- `src/app/api/calculate/route.ts` - API вычисления.
-- `src/app/api/history/route.ts` - API истории.
-- `prisma/schema.prisma` - схема SQLite.
+- `src/components/calculator/calculator-app.tsx` - main calculator UI.
+- `src/lib/calculator.ts` - calculation logic, validation, constants, formatting.
+- `src/lib/calculator.test.ts` - unit tests for calculator logic.
+- `src/app/api/calculate/route.ts` - calculation API.
+- `src/app/api/history/route.ts` - history API.
+- `prisma/schema.prisma` - SQLite schema.
 - `.github/workflows/ci.yml` - CI quality gate.
-- `README.md` - актуальные команды запуска и Windows recovery notes.
-- `.env.example` - безопасный пример локальной SQLite-конфигурации.
+- `README.md` - setup and Windows recovery notes.
+- `.env.example` - safe local SQLite configuration example.
+- `.gemini/improvements/stage-1/PLAN.md` - stage 1 plan.
+- `.gemini/improvements/stage-1/REPORT.md` - stage 1 implementation report.
+- `.gemini/improvements/stage-2/PLAN.md` - stage 2 plan.
+- `.gemini/improvements/stage-2/REPORT.md` - stage 2 reviewer checklist and tester guide.
 
-## Команды
+## Current Stage 2 Documentation Task
+
+The user asked to create stage 2 documentation:
+
+- `.gemini/improvements/stage-2/PLAN.md`
+- `.gemini/improvements/stage-2/REPORT.md`
+
+`REPORT.md` must contain task-specific reviewer and tester guidance for:
+
+- single history-item deletion;
+- full history clearing;
+- keyboard shortcuts;
+- history UI and accessibility behavior;
+- quality gate verification with `npm run check`.
+
+Do not create a second Codex instruction file. Keep this file, `CODEX.md`, as the single root resume/instruction document.
+
+## Reviewer Position For Stage 2
+
+Treat these as critical checks:
+
+- `DELETE /api/history` clears all history only when no `id` is provided.
+- `DELETE /api/history?id=<id>` deletes exactly one record.
+- Empty `id`, whitespace-only `id`, malformed `id`, and nonexistent `id` must fail in a controlled way and must not clear all history.
+- The UI delete action must not also trigger "apply from history".
+- Record ids should be URL-encoded before being placed in a request URL.
+- Keyboard handling must not double-submit on `Enter`.
+- Keyboard shortcuts must not hijack typing in operand inputs.
+- There must be one global `keydown` listener with cleanup.
+- Delete controls must be keyboard-accessible and not rely only on hover.
+- `operandB = null` history rows from unary operations must still render correctly.
+- Any TypeScript, lint, test, build, JSX, or broken export failure means `NEEDS CHANGES`.
+
+Use a binary reviewer verdict when asked:
+
+- `READY` only when the requested checks and verification pass.
+- `NEEDS CHANGES` when any mandatory check fails.
+
+## Commands
 
 ```powershell
 npm run dev
 npm run db:setup
+npm run typecheck
 npm run test
+npm run lint
+npm run build
 npm run check
 ```
 
-На Windows `npm run db:setup` лучше выполнять до `npm run dev`, чтобы Prisma могла обновить engine DLL без блокировки dev-сервером.
+On Windows, run `npm run db:setup` before `npm run dev` when Prisma files may need regeneration. A running dev server can lock Prisma's Windows engine DLL.
 
-## Решение по дальнейшим правкам
+## Verification Baseline
 
-Проект сейчас не требует дополнительных косметических или архитектурных изменений. Если задача не связана с реальным багом, регрессией, зависимостью, безопасностью или явной просьбой пользователя, код лучше не менять.
+Last observed full local gate on 2026-06-07:
 
-Минимальная политика сопровождения:
+```powershell
+npm run check
+```
 
-- не рефакторить ради стиля;
-- не расширять функциональность без запроса;
-- перед пушем выполнять `npm run check`;
-- при изменениях в Prisma сначала выполнять `npm run db:setup`;
-- держать проект как простой калькулятор.
+Observed result:
 
-## Финальные замечания по сопровождению
+- `tsc --noEmit` passed.
+- `vitest run` passed: 1 test file, 35 tests.
+- `eslint .` passed.
+- `next build` passed.
 
-- CI должен оставаться read-only: `permissions: contents: read`, `actions/checkout` с `persist-credentials: false`.
-- Быстрый старт должен работать из fresh clone, без привязки к локальному пути пользователя.
-- Qwen/GitKraken/другие AI-assistant артефакты считаются локальной оснасткой и не входят в продуктовый репозиторий без отдельного решения.
+This baseline only proves the working tree at that moment built successfully. Re-run the gate after any relevant code or dependency change.
 
-## Примечание
+## Change Discipline
 
-Файл `.vibe.md` в репозитории существует, но содержит устаревшие сведения о структуре и старых коммитах. Для текущего возврата в работу использовать этот `CODEX.md`.
+- The working tree may already be dirty. Never revert user changes unless explicitly asked.
+- Do not refactor for style.
+- Do not expand functionality without an explicit user request.
+- Keep documentation and reviewer artifacts fact-based, not promotional.
+- Prefer `rg` and PowerShell `-LiteralPath` for searches and paths.
+- Before final readiness claims, inspect the actual diff and run the relevant gate.
+
+## Notes
+
+- `.vibe.md` exists but may contain stale structure or commit information.
+- Qwen, Gemini, GitKraken, and other assistant artifacts are project tooling/context unless the user explicitly decides they are product artifacts.

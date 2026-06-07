@@ -1,23 +1,35 @@
 import { z } from 'zod'
 
-export const OPERATORS = {
-  '+': { symbol: '+', label: '+', description: 'Сложение' },
-  '-': { symbol: '-', label: '−', description: 'Вычитание' },
-  '*': { symbol: '×', label: '×', description: 'Умножение' },
-  '/': { symbol: '÷', label: '÷', description: 'Деление' },
-  '**': { symbol: '^', label: 'xⁿ', description: 'Степень' },
-  '%': { symbol: '%', label: '%', description: 'Остаток' },
+export const CONSTANTS = {
+  PI: Math.PI,
+  E: Math.E,
+} as const
+
+interface OperatorConfig {
+  readonly symbol: string
+  readonly label: string
+  readonly description: string
+  readonly precedence: number
+  readonly associativity?: 'left' | 'right'
+  readonly isFunction?: boolean
+}
+
+export const OPERATORS: Record<string, OperatorConfig> = {
+  '+': { symbol: '+', label: '+', description: 'Сложение', precedence: 1, associativity: 'left' },
+  '-': { symbol: '-', label: '−', description: 'Вычитание', precedence: 1, associativity: 'left' },
+  '*': { symbol: '*', label: '×', description: 'Умножение', precedence: 2, associativity: 'left' },
+  '/': { symbol: '/', label: '÷', description: 'Деление', precedence: 2, associativity: 'left' },
+  '**': { symbol: '**', label: 'xⁿ', description: 'Степень', precedence: 3, associativity: 'right' },
+  '%': { symbol: '%', label: '%', description: 'Остаток', precedence: 2, associativity: 'left' },
+  'sqrt': { symbol: 'sqrt', label: '√x', description: 'Квадратный корень', precedence: 4, isFunction: true },
+  'abs': { symbol: 'abs', label: '|x|', description: 'Модуль', precedence: 4, isFunction: true },
 } as const
 
 export type CalculatorOperator = keyof typeof OPERATORS
 
-export const calculateRequestSchema = z
-  .object({
-    a: z.number().finite(),
-    b: z.number().finite(),
-    operator: z.enum(Object.keys(OPERATORS) as [CalculatorOperator, ...CalculatorOperator[]]),
-  })
-  .strict()
+export const calculateRequestSchema = z.object({
+  expression: z.string().min(1),
+})
 
 export type CalculateRequest = z.infer<typeof calculateRequestSchema>
 
@@ -26,47 +38,226 @@ export type CalculationResult =
       success: true
       expression: string
       result: number
-      symbol: string
     }
   | {
       success: false
       error: string
       responseError: string
-      symbol: string
     }
 
-export function calculate({ a, b, operator }: CalculateRequest): CalculationResult {
-  const operation = OPERATORS[operator]
+/**
+ * Custom Parser Implementation
+ */
 
-  if ((operator === '/' || operator === '%') && b === 0) {
-    return {
-      success: false,
-      error: 'Деление на ноль',
-      responseError: 'Деление на ноль невозможно',
-      symbol: operation.symbol,
+type Token = 
+  | { type: 'NUMBER'; value: number }
+  | { type: 'OPERATOR'; value: string }
+  | { type: 'LPAREN' }
+  | { type: 'RPAREN' }
+  | { type: 'COMMA' }
+
+function tokenize(input: string): Token[] {
+  const tokens: Token[] = []
+  let i = 0
+
+  // Replace symbols with keys for easier parsing
+  const normalized = input
+    .replace(/×/g, '*')
+    .replace(/÷/g, '/')
+    .replace(/−/g, '-')
+    .replace(/\^/g, '**')
+    .replace(/√/g, 'sqrt')
+    .replace(/π/g, Math.PI.toString())
+    .replace(/e/g, Math.E.toString())
+
+  while (i < normalized.length) {
+    const char = normalized[i]
+    if (char === undefined) break
+
+    if (/\s/.test(char)) {
+      i++
+      continue
+    }
+
+    if (/\d/.test(char) || (char === '.' && normalized[i+1] !== undefined && /\d/.test(normalized[i+1] as string))) {
+      let numStr = ''
+      while (i < normalized.length && normalized[i] !== undefined && /[\d\.]/.test(normalized[i]!)) {
+        numStr += normalized[i]
+        i++
+      }
+      tokens.push({ type: 'NUMBER', value: parseFloat(numStr) })
+      continue
+    }
+
+    if (char === '(') {
+      tokens.push({ type: 'LPAREN' })
+      i++
+      continue
+    }
+
+    if (char === ')') {
+      tokens.push({ type: 'RPAREN' })
+      i++
+      continue
+    }
+
+    if (char === ',') {
+      tokens.push({ type: 'COMMA' })
+      i++
+      continue
+    }
+
+    // Check for operators (multi-char like **)
+    let foundOp = false
+    const remaining = normalized.slice(i)
+    
+    // Sort operators by length descending to match ** before *
+    const sortedOps = Object.keys(OPERATORS).sort((a, b) => b.length - a.length)
+    
+    for (const op of sortedOps) {
+      if (remaining.startsWith(op)) {
+        const lastToken = tokens[tokens.length - 1]
+        // Handle unary minus
+        if (op === '-' && (tokens.length === 0 || lastToken?.type === 'OPERATOR' || lastToken?.type === 'LPAREN')) {
+           tokens.push({ type: 'NUMBER', value: 0 })
+        }
+        
+        tokens.push({ type: 'OPERATOR', value: op })
+        i += op.length
+        foundOp = true
+        break
+      }
+    }
+
+    if (!foundOp) {
+      throw new Error(`Неизвестный символ: ${char}`)
     }
   }
 
-  const result = runOperation(a, b, operator)
+  return tokens
+}
 
-  if (!Number.isFinite(result)) {
-    return {
-      success: false,
-      error: 'Результат вне допустимого диапазона',
-      responseError: 'Результат вне допустимого диапазона',
-      symbol: operation.symbol,
+function shuntingYard(tokens: Token[]): Token[] {
+  const outputQueue: Token[] = []
+  const operatorStack: Token[] = []
+
+  for (const token of tokens) {
+    if (token.type === 'NUMBER') {
+      outputQueue.push(token)
+    } else if (token.type === 'OPERATOR') {
+      const op1 = OPERATORS[token.value]
+      if (!op1) throw new Error(`Неизвестный оператор: ${token.value}`)
+
+      if (op1.isFunction) {
+        operatorStack.push(token)
+      } else {
+        while (operatorStack.length > 0) {
+          const topToken = operatorStack[operatorStack.length - 1]
+          if (!topToken || topToken.type !== 'OPERATOR') break
+          
+          const op2 = OPERATORS[topToken.value]
+          if (!op2) break
+
+          if (
+            (op1.associativity === 'left' && op1.precedence <= op2.precedence) ||
+            (op1.associativity === 'right' && op1.precedence < op2.precedence)
+          ) {
+            outputQueue.push(operatorStack.pop()!)
+          } else {
+            break
+          }
+        }
+        operatorStack.push(token)
+      }
+    } else if (token.type === 'LPAREN') {
+      operatorStack.push(token)
+    } else if (token.type === 'RPAREN') {
+      while (operatorStack.length > 0 && operatorStack[operatorStack.length - 1]?.type !== 'LPAREN') {
+        outputQueue.push(operatorStack.pop()!)
+      }
+      if (operatorStack.length === 0) throw new Error('Несогласованные скобки')
+      operatorStack.pop() // Pop LPAREN
+      
+      const lastOpToken = operatorStack[operatorStack.length - 1]
+      if (lastOpToken?.type === 'OPERATOR') {
+        const topOp = OPERATORS[lastOpToken.value]
+        if (topOp?.isFunction) {
+          outputQueue.push(operatorStack.pop()!)
+        }
+      }
     }
   }
 
-  return {
-    success: true,
-    expression: `${a} ${operation.symbol} ${b}`,
-    result,
-    symbol: operation.symbol,
+  while (operatorStack.length > 0) {
+    const token = operatorStack.pop()!
+    if (token.type === 'LPAREN') throw new Error('Несогласованные скобки')
+    outputQueue.push(token)
+  }
+
+  return outputQueue
+}
+
+function evaluateRPN(tokens: Token[]): number {
+  const stack: number[] = []
+
+  for (const token of tokens) {
+    if (token.type === 'NUMBER') {
+      stack.push(token.value)
+    } else if (token.type === 'OPERATOR') {
+      const op = OPERATORS[token.value]
+      if (!op) throw new Error(`Неизвестный оператор: ${token.value}`)
+
+      if (op.isFunction) {
+        if (stack.length < 1) throw new Error('Недостаточно аргументов для функции')
+        const a = stack.pop()!
+        stack.push(runOperation(a, 0, token.value as CalculatorOperator))
+      } else {
+        if (stack.length < 2) throw new Error('Недостаточно операндов для операции')
+        const b = stack.pop()!
+        const a = stack.pop()!
+        stack.push(runOperation(a, b, token.value as CalculatorOperator))
+      }
+    }
+  }
+
+  if (stack.length !== 1) throw new Error('Ошибка в выражении')
+  const finalResult = stack[0]
+  if (finalResult === undefined) throw new Error('Ошибка вычисления')
+  return finalResult
+}
+
+export function calculate({ expression }: CalculateRequest): CalculationResult {
+  try {
+    const tokens = tokenize(expression)
+    const rpn = shuntingYard(tokens)
+    const result = evaluateRPN(rpn)
+
+    if (!Number.isFinite(result)) {
+      return {
+        success: false,
+        error: 'Результат вне допустимого диапазона',
+        responseError: 'Результат вне допустимого диапазона',
+      }
+    }
+
+    return {
+      success: true,
+      expression,
+      result,
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Ошибка парсинга'
+    return {
+      success: false,
+      error: message,
+      responseError: message,
+    }
   }
 }
 
-export function parseOperandInput(value: string): number | null {
+export function parseOperandInput(value: string | number): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+
   const normalized = value.trim().replace(',', '.')
 
   if (normalized === '') {
@@ -85,17 +276,20 @@ export function formatCalculatorResult(value: number): string {
 
 function runOperation(a: number, b: number, operator: CalculatorOperator): number {
   switch (operator) {
-    case '+':
-      return a + b
-    case '-':
-      return a - b
-    case '*':
-      return a * b
-    case '/':
+    case '+': return a + b
+    case '-': return a - b
+    case '*': return a * b
+    case '/': 
+      if (b === 0) throw new Error('Деление на ноль')
       return a / b
-    case '**':
-      return a ** b
-    case '%':
+    case '**': return a ** b
+    case '%': 
+      if (b === 0) throw new Error('Деление на ноль')
       return a % b
+    case 'sqrt': 
+      if (a < 0) throw new Error('Корень из отрицательного числа')
+      return Math.sqrt(a)
+    case 'abs': return Math.abs(a)
+    default: throw new Error(`Неподдерживаемая операция: ${operator}`)
   }
 }

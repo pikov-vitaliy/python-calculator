@@ -14,11 +14,12 @@ datasource db {
 }
 
 model Calculation {
-  id        String   @id @default(cuid())
-  operandA  Float
-  operandB  Float
-  operator  String
-  result    Float?
-  error     String?
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  operandA       Float?
+  operandB       Float?
+  operator       String?
+  fullExpression String?
+  result         Float?
+  error          String?
+  createdAt      DateTime @default(now())
 }
