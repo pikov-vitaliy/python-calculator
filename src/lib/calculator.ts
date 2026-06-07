@@ -28,7 +28,7 @@ export const OPERATORS: Record<string, OperatorConfig> = {
 export type CalculatorOperator = keyof typeof OPERATORS
 
 export const calculateRequestSchema = z.object({
-  expression: z.string().min(1),
+  expression: z.string().min(1).max(500),
 })
 
 export type CalculateRequest = z.infer<typeof calculateRequestSchema>
@@ -56,6 +56,8 @@ type Token =
   | { type: 'RPAREN' }
   | { type: 'COMMA' }
 
+const MAX_TOKENS = 200
+
 function tokenize(input: string): Token[] {
   const tokens: Token[] = []
   let i = 0
@@ -71,6 +73,10 @@ function tokenize(input: string): Token[] {
     .replace(/e/g, Math.E.toString())
 
   while (i < normalized.length) {
+    if (tokens.length >= MAX_TOKENS) {
+      throw new Error('Выражение слишком сложное')
+    }
+
     const char = normalized[i]
     if (char === undefined) break
 
@@ -79,13 +85,24 @@ function tokenize(input: string): Token[] {
       continue
     }
 
-    if (/\d/.test(char) || (char === '.' && normalized[i+1] !== undefined && /\d/.test(normalized[i+1] as string))) {
-      let numStr = ''
-      while (i < normalized.length && normalized[i] !== undefined && /[\d\.]/.test(normalized[i]!)) {
-        numStr += normalized[i]
-        i++
+    // P1: Strict numeric literal parsing
+    const numMatch = normalized.slice(i).match(/^(\d+(\.\d*)?|\.\d+)/)
+    if (numMatch) {
+      const numStr = numMatch[0]
+      const nextChar = normalized[i + numStr.length]
+      
+      // Reject if followed immediately by another dot or digit (partial parse check)
+      if (nextChar === '.' || (nextChar !== undefined && /\d/.test(nextChar))) {
+         throw new Error(`Некорректное числовое значение: ${numStr}${nextChar}...`)
       }
-      tokens.push({ type: 'NUMBER', value: parseFloat(numStr) })
+      
+      const parsed = parseFloat(numStr)
+      if (Number.isNaN(parsed)) {
+        throw new Error(`Ошибка разбора числа: ${numStr}`)
+      }
+      
+      tokens.push({ type: 'NUMBER', value: parsed })
+      i += numStr.length
       continue
     }
 
@@ -116,6 +133,20 @@ function tokenize(input: string): Token[] {
     
     for (const op of sortedOps) {
       if (remaining.startsWith(op)) {
+        const opDef = OPERATORS[op]
+        
+        // P2: Enforce mandatory parentheses for functions
+        if (opDef?.isFunction) {
+          // Look ahead for '(' (skip whitespace)
+          let lookAhead = i + op.length
+          while (lookAhead < normalized.length && /\s/.test(normalized[lookAhead] as string)) {
+            lookAhead++
+          }
+          if (normalized[lookAhead] !== '(') {
+            throw new Error(`Функция ${op} требует открывающую скобку: ${op}(...)`)
+          }
+        }
+
         const lastToken = tokens[tokens.length - 1]
         // Handle unary minus
         if (op === '-' && (tokens.length === 0 || lastToken?.type === 'OPERATOR' || lastToken?.type === 'LPAREN')) {

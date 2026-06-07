@@ -178,6 +178,8 @@ export default function CalculatorApp({ initialHistory }: CalculatorAppProps) {
       }
 
       if (document.activeElement !== inputRef.current && /[\d\+\-\*\/\^\%\(\)\.]/.test(e.key)) {
+         e.preventDefault()
+         setExpression(prev => prev + e.key)
          inputRef.current?.focus()
       }
     }

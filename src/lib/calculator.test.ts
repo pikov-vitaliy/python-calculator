@@ -35,13 +35,39 @@ describe('calculate', () => {
     ['sqrt(-1)', 'Корень из отрицательного числа'],
     ['((1+1)', 'Несогласованные скобки'],
     ['1 +', 'Недостаточно операндов для операции'],
-    ['sqrt()', 'Недостаточно аргументов для функции'],
+    ['sqrt(16) +', 'Недостаточно операндов для операции'],
   ])('handles error for "%s"', (expression, expectedError) => {
     const result = calculate({ expression })
     expect(result.success).toBe(false)
     if (!result.success) {
       expect(result.error).toContain(expectedError)
     }
+  })
+
+  it.each([
+    ['1..2 + 3'],
+    ['1.2.3 + 4'],
+    ['5 + . . 1'],
+    ['sqrt 16'],
+    ['abs -10'],
+  ])('rejects malformed syntax/literals for "%s"', (expression) => {
+    const result = calculate({ expression })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects excessively long strings via schema', () => {
+    const longStr = '1+'.repeat(300)
+    expect(calculateRequestSchema.safeParse({ expression: longStr }).success).toBe(false)
+  })
+
+  it('rejects complex expressions via token limit', () => {
+     // A long string that passes schema but hits token limit
+     const complexStr = '1+'.repeat(110) + '1' 
+     const result = calculate({ expression: complexStr })
+     expect(result.success).toBe(false)
+     if (!result.success) {
+       expect(result.error).toBe('Выражение слишком сложное')
+     }
   })
 })
 
